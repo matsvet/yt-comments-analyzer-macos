@@ -1,0 +1,24 @@
+{
+	"configurations": [
+		{
+			"type": "swift",
+			"request": "launch",
+			"args": [],
+			"cwd": "${workspaceFolder:yt-comments-analyzer-macos}",
+			"name": "Debug YTComments",
+			"target": "YTComments",
+			"configuration": "debug",
+			"preLaunchTask": "swift: Build Debug YTComments"
+		},
+		{
+			"type": "swift",
+			"request": "launch",
+			"args": [],
+			"cwd": "${workspaceFolder:yt-comments-analyzer-macos}",
+			"name": "Release YTComments",
+			"target": "YTComments",
+			"configuration": "release",
+			"preLaunchTask": "swift: Build Release YTComments"
+		}
+	]
+}
