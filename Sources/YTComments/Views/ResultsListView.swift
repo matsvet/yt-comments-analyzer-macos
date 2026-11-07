@@ -85,7 +85,7 @@ struct ResultsListView: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(state.showSummary ? Color.accentColor : .secondary)
-                        .help("Показать/скрыть саммари комментариев (локальная LLM) в правой панели")
+                        .help("Саммари и диалог по комментариям в правой панели")
                         .padding(.leading, 6)
                         .disabled(state.isSummarizing)
                     }
@@ -196,91 +196,6 @@ struct ResultsListView: View {
             } catch {
                 state.errorMessage = "Не удалось сохранить: \(error.localizedDescription)"
             }
-        }
-    }
-}
-
-// MARK: - Summary view (показывается в правой колонке detail вместо ThreadDetailView).
-// Два левых столбца (сайдбар + результаты) всегда остаются. Закрывающаяся/открывающаяся через кнопку ✨ или X / Escape.
-
-struct SummaryView: View {
-    @Environment(AppState.self) private var state
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Общая картина по комментариям")
-                    .font(state.font(for: .title3))
-                    .bold()
-                Spacer()
-                if state.isSummarizing {
-                    ProgressView().controlSize(.small)
-                    Text("Генерация…")
-                        .font(state.font(for: .caption))
-                        .foregroundStyle(.secondary)
-                }
-                Button {
-                    state.showSummary = false
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Закрыть саммари (Esc)")
-            }
-
-            if let text = state.summary, !text.isEmpty {
-                ScrollView {
-                    Text(text)
-                        .font(state.font(for: .body))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if state.isSummarizing {
-                    HStack {
-                        ProgressView().controlSize(.small)
-                        Text("Обновление саммари...")
-                            .font(state.font(for: .caption))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                HStack {
-                    Button("Повторить") {
-                        Task { await state.summarizeCurrentVideo() }
-                    }
-                    .font(state.font(for: .body))
-                    .disabled(state.isSummarizing || state.current == nil)
-                    Spacer()
-                    Button("Скопировать") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(text, forType: .string)
-                    }
-                    .font(state.font(for: .body))
-                }
-            } else if state.isSummarizing {
-                Text("Локальная модель анализирует комментарии (включая ответы в тредах). Это может занять время в зависимости от количества комментариев и мощности Mac.")
-                    .font(state.font(for: .caption))
-                    .foregroundStyle(.secondary)
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Нажмите кнопку ✨ в средней колонке, чтобы сгенерировать саммари с помощью локальной LLM (Ollama).")
-                        .font(state.font(for: .caption))
-                        .foregroundStyle(.secondary)
-                    Button("Сгенерировать саммари") {
-                        Task { await state.summarizeCurrentVideo() }
-                    }
-                    .font(state.font(for: .body))
-                    .disabled(state.current == nil)
-                }
-            }
-        }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onExitCommand {
-            // Escape закрывает саммари в правой панели
-            state.showSummary = false
         }
     }
 }

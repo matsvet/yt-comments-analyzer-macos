@@ -47,7 +47,7 @@ struct SettingsView: View {
                     .font(state.font(for: .body))
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(state.isCheckingLLM || llmAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(state.isCheckingLLM)
 
                     if state.isCheckingLLM {
                         ProgressView().controlSize(.small)
@@ -65,12 +65,12 @@ struct SettingsView: View {
                         .font(state.font(for: .caption))
                         .foregroundStyle(.secondary)
                 } else {
-                    TextField("Или введите модель вручную (напр. llama-3.1-70b-versatile)", text: $llmModelInput)
+                    TextField("Или введите модель вручную (напр. openai/gpt-oss-120b)", text: $llmModelInput)
                         .textFieldStyle(.roundedBorder)
                         .font(state.font(for: .body))
                 }
 
-                Text("Рекомендую для Groq: llama-3.1-70b-versatile (самая сильная бесплатная) или gemma2-9b-it.\nСначала введи Base URL + API Key, нажми «Загрузить список моделей», затем выбери из Picker.")
+                Text("Загрузите актуальные модели вашего провайдера и выберите модель из списка. Доступность и лимиты зависят от аккаунта. Для локальной Ollama API-ключ можно оставить пустым.")
                     .font(state.font(for: .caption))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -112,12 +112,22 @@ struct SettingsView: View {
         }
         .padding(20)
         .frame(width: 480)
+        .onChange(of: state.availableLLMModels) { _, _ in
+            selectAvailableModel()
+        }
         .onAppear {
             keyInput = state.apiKey
             llmModelInput = state.llmModel
             llmBaseURLInput = state.llmBaseURL
             llmAPIKeyInput = state.llmAPIKey
+            selectAvailableModel()
         }
+    }
+
+    private func selectAvailableModel() {
+        let models = state.availableLLMModels
+        guard !models.isEmpty, !models.contains(llmModelInput) else { return }
+        llmModelInput = models.contains("openai/gpt-oss-120b") ? "openai/gpt-oss-120b" : models[0]
     }
 
     // Локальные draft-поля (сохраняются только по кнопке Сохранить)

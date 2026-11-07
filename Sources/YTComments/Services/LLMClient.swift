@@ -20,14 +20,18 @@ struct LLMClient {
     /// Выполняет chat completion с system и user сообщениями.
     /// Возвращает текст ответа.
     func chat(system: String, user: String, model: String) async throws -> String {
-        let requestBody = OpenAIChatRequest(
-            model: model,
-            messages: [
-                OpenAIMessage(role: "system", content: system),
-                OpenAIMessage(role: "user", content: user)
-            ],
-            stream: false
-        )
+        try await chat(messages: [.init(role: .system, content: system), .init(role: .user, content: user)], model: model)
+    }
+
+    struct Message: Codable {
+        enum Role: String, Codable { case system, user, assistant }
+        let role: Role
+        let content: String
+    }
+
+    func chat(messages: [Message], model: String, jsonResponse: Bool = false) async throws -> String {
+        let requestBody = OpenAIChatRequest(model: model, messages: messages, stream: false,
+                                            response_format: jsonResponse ? .init(type: "json_object") : nil)
 
         var request = URLRequest(url: chatEndpoint)
         request.httpMethod = "POST"
@@ -43,8 +47,14 @@ struct LLMClient {
             throw LLMError.network("Нет HTTP ответа")
         }
 
+        if httpResponse.statusCode == 429 {
+            let delay = Double(httpResponse.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 60
+            throw LLMError.rateLimited(retryAfter: delay.isFinite ? max(1, delay) : 60)
+        }
+
         guard (200...299).contains(httpResponse.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? ""
+            var body = String(data: data, encoding: .utf8) ?? ""
+            if !apiKey.isEmpty { body = body.replacingOccurrences(of: apiKey, with: "[скрыто]") }
             throw LLMError.http(status: httpResponse.statusCode, body: body)
         }
 
@@ -55,38 +65,41 @@ struct LLMClient {
         return content
     }
 
-    /// Пытается получить список моделей (для статуса).
-    /// Для локальной Ollama использует /api/tags как fallback.
-    func listModels() async -> [String]? {
-        // Сначала попробуем OpenAI-совместимый /v1/models
-        if let modelsURL = makeModelsURL(from: chatEndpoint) {
-            var request = URLRequest(url: modelsURL)
-            request.httpMethod = "GET"
-            if !apiKey.isEmpty {
-                request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            }
-            do {
-                let (data, resp) = try await session.data(for: request)
-                if (resp as? HTTPURLResponse)?.statusCode == 200,
-                   let decoded = try? JSONDecoder().decode(OpenAIModelsResponse.self, from: data) {
-                    return decoded.data.map { $0.id }
-                }
-            } catch { }
+    /// Загружает модели, сохраняя причину ошибки для диагностики в настройках.
+    func listModels() async throws -> [String] {
+        guard let modelsURL = makeModelsURL(from: chatEndpoint) else {
+            throw LLMError.invalidURL
         }
+        do {
+            let data = try await modelData(from: modelsURL)
+            return try JSONDecoder().decode(OpenAIModelsResponse.self, from: data).data.map { $0.id }
+        } catch {
+            // Только локальная Ollama поддерживает резервный /api/tags.
+            guard ["localhost", "127.0.0.1"].contains(chatEndpoint.host ?? ""),
+                  chatEndpoint.port == 11434 else { throw error }
+            let tagsURL = chatEndpoint.deletingLastPathComponent()
+                .deletingLastPathComponent().deletingLastPathComponent()
+                .appendingPathComponent("api/tags")
+            let data = try await modelData(from: tagsURL)
+            return try JSONDecoder().decode(OllamaTagsResponse.self, from: data).models.map { $0.name }
+        }
+    }
 
-        // Fallback для классической локальной Ollama
-        if chatEndpoint.absoluteString.contains("localhost:11434") || chatEndpoint.absoluteString.contains("127.0.0.1:11434") {
-            if let tagsURL = URL(string: "http://localhost:11434/api/tags") {
-                do {
-                    let (data, resp) = try await session.data(from: tagsURL)
-                    if (resp as? HTTPURLResponse)?.statusCode == 200,
-                       let tags = try? JSONDecoder().decode(OllamaTagsResponse.self, from: data) {
-                        return tags.models.map { $0.name }
-                    }
-                } catch { }
-            }
+    private func modelData(from url: URL) async throws -> Data {
+        var request = URLRequest(url: url, timeoutInterval: 30)
+        if !apiKey.isEmpty {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
-        return nil
+        let (data, response) = try await session.data(for: request)
+        guard let response = response as? HTTPURLResponse else {
+            throw LLMError.network("Нет HTTP ответа")
+        }
+        guard (200...299).contains(response.statusCode) else {
+            var body = String(data: data, encoding: .utf8) ?? ""
+            if !apiKey.isEmpty { body = body.replacingOccurrences(of: apiKey, with: "[скрыто]") }
+            throw LLMError.http(status: response.statusCode, body: body)
+        }
+        return data
     }
 
     private func makeModelsURL(from chatURL: URL) -> URL? {
@@ -105,13 +118,10 @@ struct LLMClient {
 
     private struct OpenAIChatRequest: Encodable {
         let model: String
-        let messages: [OpenAIMessage]
+        let messages: [Message]
         let stream: Bool
-    }
-
-    private struct OpenAIMessage: Codable {
-        let role: String
-        let content: String
+        let response_format: ResponseFormat?
+        struct ResponseFormat: Encodable { let type: String }
     }
 
     private struct OpenAIChatResponse: Decodable {
@@ -143,15 +153,24 @@ enum LLMError: LocalizedError {
     case http(status: Int, body: String)
     case emptyResponse
     case network(String)
+    case rateLimited(retryAfter: TimeInterval)
 
     var errorDescription: String? {
         switch self {
         case .invalidURL:
             return "Неверный адрес LLM endpoint."
+        case .http(let status, _) where status == 401:
+            return "LLM: API-ключ недействителен или отозван (HTTP 401). Создайте новый ключ у провайдера."
+        case .http(let status, _) where status == 403:
+            return "LLM: доступ запрещён (HTTP 403). Проверьте ограничения провайдера, сети или VPN."
+        case .http(let status, _) where status == 429:
+            return "LLM: превышен лимит запросов или квота (HTTP 429). Повторите позже или проверьте лимиты аккаунта."
         case .http(let status, let body):
             return "Ошибка LLM (HTTP \(status)): \(body.prefix(200))"
         case .emptyResponse:
             return "Пустой ответ от модели."
+        case .rateLimited(let delay):
+            return "LLM: превышен лимит запросов (HTTP 429). Повторите через \(Int(min(delay, 86400).rounded(.up))) с."
         case .network(let text):
             return "Сетевая ошибка: \(text)"
         }

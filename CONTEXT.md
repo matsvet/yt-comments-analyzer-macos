@@ -132,3 +132,9 @@ let sheets = SheetState()
 (Grill продолжится: можно выбирать следующий child или альтернативы вроде нескольких @Environment.)
 
 (End of CONTEXT.md. Edit only when architecture changes.)
+## Comment-grounded chat (2026-10-22)
+
+- `CommentChatState` is an @Observable @MainActor child of AppState. It owns the draft, turns, cancellation and per-video in-memory sessions. Switching videos cancels pending work; late responses cannot update another conversation. Nothing is written to video JSON caches.
+- `CommentChatContext` searches the current video's full local comment pool using question terms, recent questions and source continuity. It builds a bounded excerpt set, including thread context; it is lexical retrieval, not exhaustive or semantic search.
+- `LLMClient.Message` supports multi-turn OpenAI-compatible requests. Chat requests use JSON object responses, validate referenced source numbers and return a fixed insufficient-evidence message when sources are absent. The model has no web tools; grounding instructions constrain answers to supplied comments.
+- `SummaryView` combines the existing summary with a conversation and fixed composer. Source cards open existing Thread navigation. Summaries remain separate from evidence and never count as a primary source. Video playback/transcripts are not loaded.

@@ -48,6 +48,26 @@ struct ThreadDetailView: View {
                 .onChange(of: state.highlightedCommentId) { scrollToHighlight(proxy) }
                 .onChange(of: state.selectedThreadId) { scrollToHighlight(proxy) }
             }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if !state.commentChat.turns.isEmpty {
+                    VStack(spacing: 0) {
+                        HStack {
+                            Button {
+                                state.showSummary = true
+                            } label: {
+                                Label("Назад к диалогу", systemImage: "chevron.left")
+                            }
+                            .buttonStyle(.borderless)
+                            .font(state.font(for: .callout))
+                            Spacer()
+                        }
+                        .padding(.horizontal)
+                        .padding(.vertical, 10)
+                        Divider()
+                    }
+                    .background(.bar)
+                }
+            }
             .navigationTitle("Тред")
         } else {
             ContentUnavailableView(

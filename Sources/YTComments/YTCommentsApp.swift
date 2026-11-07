@@ -33,6 +33,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+
+        if let iconUrl = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+           let iconImage = NSImage(contentsOf: iconUrl) {
+            NSApp.applicationIconImage = iconImage
+        } else if let iconImage = NSImage(contentsOfFile: "Resources/AppIcon.png") ?? NSImage(contentsOfFile: "Resources/AppIcon.icns") {
+            NSApp.applicationIconImage = iconImage
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
