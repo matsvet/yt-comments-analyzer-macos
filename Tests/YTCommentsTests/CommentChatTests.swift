@@ -53,11 +53,11 @@ struct CommentChatTests {
         let chat = CommentChatState()
         let video = VideoComments(videoId: "retry", fetchedAt: .now, comments: [comment("r", text: "Отличная клавиатура")])
         var attempts = 0
-        ChatProtocol.handler = { _ in
+        ChatProtocol.handler = { request in
             attempts += 1
             ChatProtocol.status = attempts == 1 ? 429 : 200
             ChatProtocol.headers = ["Retry-After": "0.01"]
-            let response = #"{"answer":"Автор хвалит клавиатуру [1]","sources":[1]}"#
+            let response = try Self.reply(for: request, quote: "Отличная клавиатура")
             return try JSONSerialization.data(withJSONObject: ["choices": [["message": ["content": response]]]])
         }
         chat.draft = "Что о клавиатуре?"
@@ -66,7 +66,7 @@ struct CommentChatTests {
             if !chat.isSending { break }
             try await Task.sleep(for: .milliseconds(10))
         }
-        #expect(attempts == 2)
+        #expect(attempts == 4) // 429 + повтор плана + ответ + проверка
         #expect(chat.turns.last?.answer != nil)
         #expect(chat.turns.last?.error == nil)
     }
@@ -98,13 +98,14 @@ struct CommentChatTests {
             #expect((json["response_format"] as? [String: String])?["type"] == "json_object")
             let last = messages.last?["content"] ?? ""
             if last.contains("поясни") {
-                #expect(messages.contains { $0["role"] == "assistant" })
-                #expect(messages.contains { $0["content"] == "Что о сварщиках?" })
+                #expect(messages.contains { ($0["content"] ?? "").contains("Что о сварщиках?") })
             }
             if last.contains("клавиатуре") {
                 #expect(!messages.contains { ($0["content"] ?? "").contains("80000") })
             }
-            let response = #"{"answer":"По комментарию [1]","sources":[1]}"#
+            var replay = request
+            replay.httpBody = data
+            let response = try Self.reply(for: replay, quote: last.contains("клавиатуре") ? "Клавиатура удобная" : "Сварщики получают 80000")
             let body: [String: Any] = ["choices": [["message": ["content": response]]]]
             return try JSONSerialization.data(withJSONObject: body)
         }
@@ -144,6 +145,29 @@ struct CommentChatTests {
         chat.prepareRetry()
         #expect(chat.draft == "pending")
         #expect(chat.turns.isEmpty)
+    }
+
+    private static func reply(for request: URLRequest, quote: String) throws -> String {
+        let body = try JSONSerialization.jsonObject(with: request.httpBody ?? read(request.httpBodyStream)) as! [String: Any]
+        let messages = body["messages"] as! [[String: String]]
+        let system = messages.first?["content"] ?? ""
+        if system.contains("Спланируй поиск") {
+            return #"{"mode":"search","queries":[],"criterion":null,"exactPhrase":null,"countUnit":"comments"}"#
+        }
+        if system.contains("Проверь каждый вывод") { return #"{"supported":[1]}"# }
+        return String(data: try JSONSerialization.data(withJSONObject: ["claims": [["text": "По комментарию", "evidence": [["source": 1, "quote": quote]]]], "sufficient": true, "searchQueries": [], "readThreads": []]), encoding: .utf8)!
+    }
+
+    private static func read(_ stream: InputStream?) -> Data {
+        guard let stream else { return Data() }
+        stream.open(); defer { stream.close() }
+        var data = Data(), bytes = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let size = stream.read(&bytes, maxLength: bytes.count)
+            if size <= 0 { break }
+            data.append(contentsOf: bytes.prefix(size))
+        }
+        return data
     }
 
     private func finish(_ chat: CommentChatState) async throws {

@@ -6,6 +6,8 @@ import Foundation
 /// Формат: OpenAI /v1/chat/completions (Ollama тоже поддерживает его по адресу /v1/...).
 struct LLMClient {
     var session: URLSession = .shared
+    var chatGPT: ChatGPTSession? = nil
+    var reasoningEffort: ReasoningEffort = .medium
 
     /// Полный URL к /chat/completions endpoint.
     /// Для локальной Ollama: "http://localhost:11434/v1/chat/completions"
@@ -30,6 +32,9 @@ struct LLMClient {
     }
 
     func chat(messages: [Message], model: String, jsonResponse: Bool = false) async throws -> String {
+        if let chatGPT {
+            return try await ChatGPTClient(session: session, account: chatGPT, reasoningEffort: reasoningEffort).chat(messages: messages, model: model, jsonResponse: jsonResponse)
+        }
         let requestBody = OpenAIChatRequest(model: model, messages: messages, stream: false,
                                             response_format: jsonResponse ? .init(type: "json_object") : nil)
 
@@ -67,6 +72,7 @@ struct LLMClient {
 
     /// Загружает модели, сохраняя причину ошибки для диагностики в настройках.
     func listModels() async throws -> [String] {
+        if let chatGPT { return try await ChatGPTClient(session: session, account: chatGPT).listModels() }
         guard let modelsURL = makeModelsURL(from: chatEndpoint) else {
             throw LLMError.invalidURL
         }

@@ -20,6 +20,15 @@ Terms discovered/extracted from code (Models/, State/, Services/, Views/, tests)
 - **flat comments list always (no nested tree)**: core invariant of StoredComment + VideoComments.comments. API fetches to this flat form upfront for offline search.
 - Other: SortOrder (likes/newest/oldest), YouTubeError, LLMError, full upfront fetch for offline search.
 
+## Implemented Improvements (2026-11-15): analysis v2
+
+- OnDemandSummary now processes every unique loaded StoredComment using CommentCorpus batches; short snapshots use a direct summary request. CommentAnalysis owns retrieval, query planning, full extraction, reduction, grounded final answers, verification, count routing, and bounded RAM caches.
+- CommentCorpus supplies stable numeric source IDs, native word normalization/BM25, diverse Thread retrieval, complete text partitioning, and exact-quote validation.
+- CommentChatState keeps per-Video conversations and cancellation. AppState orchestrates on-demand runs and UI progress. SummaryView exposes coverage, sources, cancellation and a forced full-scan toggle.
+- Full summary and query notes are RAM-only; no old JSON is migrated, enriched or rewritten. Content changes, configuration and account changes isolate cached analysis.
+- ChatGPT subscription transport, OAuth/Keychain and explicit reasoning effort are supported alongside API/Ollama; no automatic billing fallback.
+- See [analysis-v2.md](docs/analysis-v2.md) for current flow, budgets, evidence checks and limitations. Older architecture descriptions below remain historical context.
+
 ## Current Architectural Decisions
 - **Single source of truth**: @Observable @MainActor final class AppState. All state (current VideoComments?, library, searchText + 3 bool flags, sortOrder, selectedThreadId/highlightedCommentId, showSummary, LLM config+status, summary/session cache, etc.). Passed to SwiftUI via .environment(state) in YTCommentsApp + read via @Environment(AppState.self) in all Views. No other singletons.
 - **UI layout**: NavigationSplitView in ContentView (3 columns: sidebar / ResultsListView / detail). detail conditionally shows SummaryView (if showSummary) or ThreadDetailView. Custom overlays for settings (to preserve Cmd+Q etc).

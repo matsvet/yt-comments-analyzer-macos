@@ -66,6 +66,18 @@ This rule takes precedence. When implementing any user request, ensure it does n
 
 ## Architecture
 
+### Analysis v2 (current)
+
+The older summary/LLM descriptions below are historical. Current implementation is
+`CommentCorpus` (stable sources, BM25, complete partitions) + `CommentAnalysis`
+(actor: planning, full extraction/reduction, quote and semantic verification,
+counting, bounded RAM caches). `CommentChatState` manages conversations and
+`AppState` manages on-demand summary progress/cancellation. Both use `LLMClient`:
+ChatGPT subscription via OAuth/Keychain + Responses API, or API/Ollama. No new
+runtime dependencies, no background analysis on opening caches, no JSON migrations.
+See `docs/analysis-v2.md` for the current algorithms, limits and Mermaid diagrams.
+
+
 Native SwiftUI macOS app: fetches YouTube comments via the Data API v3, caches them locally as flat JSON, supports offline search and thread navigation. Supports optional on-demand local (or compatible remote) LLM summarization of the current video's comments.
 
 **Layers (`Sources/YTComments/`):**

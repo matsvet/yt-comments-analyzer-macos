@@ -61,7 +61,7 @@ struct SummaryView: View {
                                                             }
                                                             .buttonStyle(.borderless)
                                                             .help("Открыть исходный комментарий в треде")
-                                                            Text(String(source.text.prefix(500)))
+                                                            Text(turn.sourceQuotes.indices.contains(index) ? turn.sourceQuotes[index] : String(source.text.prefix(500)))
                                                                 .font(state.font(for: .caption)).textSelection(.enabled)
                                                         }
                                                     }
@@ -69,7 +69,9 @@ struct SummaryView: View {
                                             }
                                             .font(state.font(for: .caption))
                                         }
-                                        Text("Для ответа отобрано \(turn.searchedComments) из \(turn.totalComments) комментариев.")
+                                        Text(turn.completeAnalysis
+                                             ? "Полный проход: \(turn.analyzedComments) загруженных комментариев."
+                                             : "Локальный поиск: \(turn.scannedComments). Модель прочитала фрагменты \(turn.analyzedComments) комментариев; финальная подборка: \(turn.searchedComments).")
                                             .font(state.font(for: .caption)).foregroundStyle(.secondary)
                                     } else if let error = turn.error {
                                         Text(error).font(state.font(for: .callout)).foregroundStyle(.red)
@@ -111,6 +113,10 @@ struct SummaryView: View {
                 .layoutPriority(-1)
 
                 Divider()
+                Toggle("Все комментарии", isOn: $chat.fullScan)
+                    .font(state.font(for: .caption))
+                    .help("Принудительный полный проход вместо поиска по подборке. Потребует больше запросов к модели.")
+                    .disabled(chat.isSending || state.isSummarizing)
                 TextField("Спросите по комментариям…", text: $chat.draft, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .font(state.font(for: .body))
@@ -156,8 +162,24 @@ struct SummaryView: View {
                 if let text = state.summary, !text.isEmpty {
                     Text(text).font(state.font(for: .body)).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    if let coverage = state.summaryCoverage {
+                        Text(coverage).font(state.font(for: .caption)).foregroundStyle(.secondary)
+                    }
+                    if !state.summarySources.isEmpty {
+                        DisclosureGroup("Источники саммари") {
+                            ForEach(Array(state.summarySources.enumerated()), id: \.offset) { _, source in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Button("[\(source.number)] \(source.comment.author)") {
+                                        state.selectThread(source.comment.threadId, highlight: source.comment.id)
+                                    }
+                                    .buttonStyle(.borderless)
+                                    Text(source.quote).textSelection(.enabled)
+                                }.padding(.vertical, 4)
+                            }
+                        }.font(state.font(for: .caption))
+                    }
                     HStack {
-                        Button("Повторить саммари") { Task { await state.summarizeCurrentVideo() } }
+                        Button("Пересобрать саммари") { Task { await state.summarizeCurrentVideo(regenerate: true) } }
                             .disabled(state.isSummarizing || state.commentChat.isSending)
                         Spacer()
                         Button("Скопировать") {
@@ -173,7 +195,8 @@ struct SummaryView: View {
                 if state.isSummarizing {
                     HStack {
                         ProgressView().controlSize(.small)
-                        Text("Генерация саммари…").font(state.font(for: .callout))
+                        Text(state.summaryProgress).font(state.font(for: .callout))
+                        Button("Остановить") { state.cancelSummary() }
                     }
                 }
             }.padding(.top, 8)

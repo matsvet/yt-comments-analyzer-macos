@@ -1,7 +1,7 @@
 import Foundation
 
 /// Кэш комментариев одного видео (то, что сериализуется на диск).
-struct VideoComments: Codable {
+struct VideoComments: Codable, Equatable {
     let videoId: String
     var title: String?
     let fetchedAt: Date
